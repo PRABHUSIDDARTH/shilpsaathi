@@ -1,4 +1,7 @@
-"""Telegram adapter. M0: echo text, store photos and voice notes, confirm their hashes.
+"""Telegram adapter. M0: echo text, store media and confirm its hash.
+
+Normal photos (compressed by Telegram) are the default. Images sent as files are
+also accepted and stored byte for byte.
 
 Run with: uv run python -m shilpsaathi.channel.telegram_bot
 """
@@ -17,10 +20,12 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from telegram.request import BaseRequest
 
 from shilpsaathi.config import Config, ConfigError, load_config
-from shilpsaathi.media import store_media
+from shilpsaathi.media import StoredMedia, image_extension, store_media
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SEND_GUIDE = "Send a photo or a voice note."
+# The Bot API will not let a bot download a larger file.
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
 log = logging.getLogger(__name__)
 
@@ -67,20 +72,39 @@ def build_application(config: Config, request: BaseRequest | None = None) -> App
         # Telegram caps a message at 4096 characters.
         await update.message.reply_text(f"You said: {update.message.text}"[:4096])
 
-    async def save(message: Message, file_id: str, ext: str, label: str) -> None:
+    async def download(message: Message, file_id: str) -> bytes:
         telegram_file = await message.get_bot().get_file(file_id)
-        data = bytes(await telegram_file.download_as_bytearray())
-        stored = store_media(config.media_dir, data, ext)
+        return bytes(await telegram_file.download_as_bytearray())
+
+    async def confirm(message: Message, stored: StoredMedia, label: str) -> None:
         await message.reply_text(
             f"{label} stored ({stored.size} bytes).\nsha256: {stored.sha256}"
         )
 
     async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         largest = update.message.photo[-1]  # Telegram lists sizes smallest first
-        await save(update.message, largest.file_id, "jpg", "Photo")
+        data = await download(update.message, largest.file_id)
+        await confirm(update.message, store_media(config.media_dir, data, "jpg"), "Photo")
 
     async def voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await save(update.message, update.message.voice.file_id, "ogg", "Voice note")
+        data = await download(update.message, update.message.voice.file_id)
+        await confirm(update.message, store_media(config.media_dir, data, "ogg"), "Voice note")
+
+    async def image_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        document = update.message.document
+        if document.file_size and document.file_size > MAX_DOWNLOAD_BYTES:
+            await update.message.reply_text(
+                "That file is over 20 MB, so I can't download it. Send it as a normal photo."
+            )
+            return
+        data = await download(update.message, document.file_id)
+        ext = image_extension(data)
+        if ext is None:
+            await update.message.reply_text(
+                "Nothing was stored. I can keep JPEG, PNG, WebP or HEIC image files."
+            )
+            return
+        await confirm(update.message, store_media(config.media_dir, data, ext), "Original image")
 
     async def unsupported(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"I can't use that yet. {SEND_GUIDE}")
@@ -96,6 +120,7 @@ def build_application(config: Config, request: BaseRequest | None = None) -> App
     app.add_handler(CommandHandler("start", start, filters=allowed))
     app.add_handler(MessageHandler(allowed & filters.PHOTO, photo))
     app.add_handler(MessageHandler(allowed & filters.VOICE, voice))
+    app.add_handler(MessageHandler(allowed & filters.Document.IMAGE, image_file))
     app.add_handler(MessageHandler(allowed & filters.TEXT & ~filters.COMMAND, echo))
     app.add_handler(MessageHandler(allowed, unsupported))
     app.add_handler(MessageHandler(base, refuse))

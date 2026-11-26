@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _EXTENSION = re.compile(r"[a-z0-9]{1,5}")
+_HEIF_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"mif1"}
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,23 @@ class StoredMedia:
     sha256: str
     path: Path
     size: int
+
+
+def image_extension(data: bytes) -> str | None:
+    """Identify a supported raster image from its leading bytes, or return None.
+
+    A sender controls a file's name and declared type, so neither is trusted.
+    This checks the signature only; it does not decode the image.
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[4:8] == b"ftyp" and data[8:12] in _HEIF_BRANDS:
+        return "heic"
+    return None
 
 
 def store_media(root: Path, data: bytes, ext: str) -> StoredMedia:

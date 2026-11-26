@@ -111,7 +111,15 @@ def test_voice_note_is_stored_as_ogg_and_confirms_its_hash(tmp_path):
     assert len(fake.sent) == 1 and digest in fake.sent[0] and "Voice note" in fake.sent[0]
 
 
-@pytest.mark.parametrize("message", [VOICE, {"photo": [photo("p", 90)]}, {"text": "hi"}])
+@pytest.mark.parametrize(
+    "message",
+    [
+        VOICE,
+        {"photo": [photo("p", 90)]},
+        {"document": {"file_id": "d", "file_unique_id": "d", "mime_type": "image/jpeg"}},
+        {"text": "hi"},
+    ],
+)
 def test_stranger_is_told_their_id_and_nothing_is_downloaded(tmp_path, message):
     fake = FakeTelegram()
 
@@ -220,3 +228,79 @@ def test_a_crash_is_logged_with_the_token_redacted(tmp_path, log_output):
     assert TOKEN not in str(caught.value)
     assert "<redacted>" in log_output.getvalue()
     assert TOKEN not in log_output.getvalue()
+
+
+def image_file(mime_type, size=None, name="IMG_1.jpg"):
+    document = {"file_id": "doc1", "file_unique_id": "doc1", "mime_type": mime_type, "file_name": name}
+    if size is not None:
+        document["file_size"] = size
+    return {"document": document}
+
+
+@pytest.mark.parametrize(
+    "mime_type, data, ext",
+    [
+        ("image/jpeg", b"\xff\xd8\xff\xe1Exif-original", "jpg"),
+        ("image/png", b"\x89PNG\r\n\x1a\nrest", "png"),
+        ("image/webp", b"RIFF\x10\x00\x00\x00WEBPrest", "webp"),
+        ("image/heic", b"\x00\x00\x00\x18ftypheicrest", "heic"),
+        ("image/heif", b"\x00\x00\x00\x18ftypmif1rest", "heic"),
+    ],
+)
+def test_image_sent_as_a_file_is_stored_unchanged(tmp_path, mime_type, data, ext):
+    fake = FakeTelegram(files={"doc1": data})
+
+    media = deliver(tmp_path, fake, image_file(mime_type, size=len(data)))
+
+    digest = hashlib.sha256(data).hexdigest()
+    assert (media / f"{digest}.{ext}").read_bytes() == data
+    assert len(fake.sent) == 1 and digest in fake.sent[0]
+    assert fake.sent[0].startswith("Original image stored")
+
+
+def test_extension_comes_from_the_content_not_the_sender(tmp_path):
+    data = b"\x89PNG\r\n\x1a\nrest"
+    fake = FakeTelegram(files={"doc1": data})
+
+    media = deliver(tmp_path, fake, image_file("image/jpeg", name="../../evil.sh"))
+
+    assert [p.name for p in media.iterdir()] == [f"{hashlib.sha256(data).hexdigest()}.png"]
+
+
+@pytest.mark.parametrize(
+    "mime_type, data",
+    [
+        ("image/svg+xml", b"<svg onload='x()'/>"),
+        ("image/png", b"<svg onload='x()'/>"),
+        ("image/jpeg", b"#!/bin/sh\n"),
+        ("image/heic", b"\x00\x00\x00\x18ftypisomvideo"),
+        ("image/webp", b"RIFF\x10\x00\x00\x00WAVEaudio"),
+    ],
+)
+def test_file_that_is_not_a_supported_image_is_not_stored(tmp_path, mime_type, data):
+    fake = FakeTelegram(files={"doc1": data})
+
+    media = deliver(tmp_path, fake, image_file(mime_type))
+
+    assert not media.exists()
+    assert len(fake.sent) == 1 and "JPEG, PNG, WebP or HEIC" in fake.sent[0]
+    assert "stored (" not in fake.sent[0]
+
+
+def test_oversized_image_file_is_refused_before_downloading(tmp_path):
+    fake = FakeTelegram()
+
+    media = deliver(tmp_path, fake, image_file("image/jpeg", size=20 * 1024 * 1024 + 1))
+
+    assert not media.exists()
+    assert "getFile" not in fake.calls
+    assert len(fake.sent) == 1 and "20 MB" in fake.sent[0]
+
+
+def test_non_image_file_is_not_downloaded(tmp_path):
+    fake = FakeTelegram()
+
+    deliver(tmp_path, fake, image_file("application/pdf", name="a.pdf"))
+
+    assert "getFile" not in fake.calls
+    assert len(fake.sent) == 1 and "voice note" in fake.sent[0]
