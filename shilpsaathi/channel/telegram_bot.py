@@ -109,6 +109,10 @@ def run(app: Application) -> None:
     except InvalidToken:
         # The library's own message includes the token, so it is dropped here.
         raise SystemExit("Telegram rejected TELEGRAM_BOT_TOKEN. Check it in .env.") from None
+    except Exception:
+        # Left uncaught, Python would print the traceback without redaction.
+        log.exception("the bot stopped unexpectedly")
+        raise SystemExit(1) from None
 
 
 def main() -> None:

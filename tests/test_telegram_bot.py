@@ -205,3 +205,18 @@ def test_rejected_token_exits_without_printing_it(tmp_path):
     assert "TELEGRAM_BOT_TOKEN" in str(caught.value)
     assert TOKEN not in str(caught.value)
     assert caught.value.__suppress_context__
+
+
+def test_a_crash_is_logged_with_the_token_redacted(tmp_path, log_output):
+    # An uncaught exception is printed by Python itself, which skips log redaction.
+    class CrashingApp:
+        def run_polling(self, **kwargs):
+            raise RuntimeError(f"failed: https://api.telegram.org/bot{TOKEN}/getUpdates")
+
+    with pytest.raises(SystemExit) as caught:
+        run(CrashingApp())
+
+    assert caught.value.__suppress_context__
+    assert TOKEN not in str(caught.value)
+    assert "<redacted>" in log_output.getvalue()
+    assert TOKEN not in log_output.getvalue()
