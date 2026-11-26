@@ -157,7 +157,7 @@ def test_unsupported_message_gets_guidance(tmp_path):
     assert "getFile" not in fake.calls
 
 
-def test_failed_download_tells_the_artisan_it_was_not_stored(tmp_path):
+def test_failed_download_asks_the_artisan_to_resend(tmp_path):
     fake = FakeTelegram(fail_downloads=True)
 
     media = deliver(tmp_path, fake, VOICE)
