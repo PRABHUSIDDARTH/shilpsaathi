@@ -67,9 +67,18 @@ Multimodal LLM with schema-constrained outputs, Indic speech-to-text and text-to
 
 ## Run locally
 
-```
-[add your commands, e.g. docker compose up]
-```
+Current stage (M0): a Telegram bot that echoes text and stores photos and voice notes with their sha256 hashes. Send photos normally (Telegram compresses them). You can also send a JPEG, PNG, WebP or HEIC image as a file (up to 20 MB) to keep the original. Needs [uv](https://docs.astral.sh/uv/).
+
+1. Create a `.env` file using the variable names in [.env.example](./.env.example). Set `TELEGRAM_BOT_TOKEN` (from @BotFather).
+2. Start the bot:
+   ```
+   uv run python -m shilpsaathi.channel.telegram_bot
+   ```
+3. Message the bot. It replies with your Telegram user ID. Add that ID to `ARTISAN_TELEGRAM_IDS` and restart.
+
+Files are saved to `var/media/` (git-ignored). Use test personas only.
+
+Run the tests with `uv run pytest`.
 
 ## Demo
 

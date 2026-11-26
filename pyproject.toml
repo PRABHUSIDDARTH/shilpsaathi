@@ -1,0 +1,22 @@
+[project]
+name = "shilpsaathi"
+version = "0.1.0"
+description = "Voice-first agent that turns an artisan's voice note into a maker-approved listing"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "python-dotenv>=1.2.4",
+    "python-telegram-bot>=22.8",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170.17",
+    "pytest>=9.2.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
