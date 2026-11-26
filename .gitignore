@@ -16,3 +16,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .hypothesis/
+
+# Logs
+*.log
